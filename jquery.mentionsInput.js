@@ -35,12 +35,16 @@
             mentionsOverlay            : _.template('<div class="mentions"><div></div></div>'),
             mentionItemSyntax          : _.template('@[<%= value %>](<%= type %>:<%= id %>)'),
             mentionItemHighlight       : _.template('<strong><span><%= value %></span></strong>')
-        }
+        },
+        autocompleteListDisplay: 'name', //Property to use in the autocomplete drop down of mention objects when using @mention
+        asTypeahead: false, //Allows the creation of a box for adding a single mention (or tag) without the need of a trigger character
+        followerListSize: '15em', //Allow user to set the desired size of the follower list (ul) element.
+        followerListWrap: true //If false, follower list ignores size and expands to fit each follower on a signle line
     };
 
     //Class util
     var utils = {
-	    //Encodes the character with _.escape function (undersocre)
+        //Encodes the character with _.escape function (underscore)
         htmlEncode       : function (str) {
             return _.escape(str);
         },
@@ -136,9 +140,14 @@
         function initMentionsOverlay() {
             elmMentionsOverlay = $(settings.templates.mentionsOverlay()); //Get the HTML code of the mentions' overlay
             elmMentionsOverlay.prependTo(elmWrapperBox); //Insert into elmWrapperBox the mentions overlay
+
+            if ( settings.asTypeahead ) {
+                elmMentionsOverlay.addClass("hiddenMentions");
+            }
+
         }
 
-	    //Updates the values of the main variables
+        //Updates the values of the main variables
         function updateValues() {
             var syntaxMessage = getInputBoxValue(); //Get the actual value of the text area
 
@@ -170,13 +179,17 @@
             inputBuffer = [];
         }
 
-	    //Updates the mentions collection
+        //Updates the mentions collection
         function updateMentionsCollection() {
             var inputText = getInputBoxValue(); //Get the actual value of text area
 
-	        //Returns the values that doesn't match the condition
+            //Returns the values that doesn't match the condition
             mentionsCollection = _.reject(mentionsCollection, function (mention, index) {
-                return !mention.value || inputText.indexOf(mention.value) == -1;
+                var rejectResult = !mention.value || inputText.indexOf(mention.value) == -1;
+                if ( rejectResult ) {
+                    elmInputBox.trigger('unmention', [mention]);
+                }
+                return rejectResult;
             });
             mentionsCollection = _.compact(mentionsCollection); //Delete all the falsy values of the array and return the new array
         }
@@ -221,7 +234,9 @@
             // Mentions and syntax message
             var updatedMessageText = start + mention.value + ' ' + end;
             elmInputBox.val(updatedMessageText); //Set the value to the txt area
-	        elmInputBox.trigger('mention');
+
+            // When triggering Mention event, pass the newly mentioned object through the event for use by the handler
+            elmInputBox.trigger('mention',[mention]);
             updateValues();
 
             // Set correct focus and selection
@@ -314,7 +329,13 @@
             updateMentionsCollection();
 
             var triggerCharIndex = _.lastIndexOf(inputBuffer, settings.triggerChar); //Returns the last match of the triggerChar in the inputBuffer
-            if (triggerCharIndex > -1) { //If the triggerChar is present in the inputBuffer array
+
+            if ( settings.asTypeahead ) {
+                /* if we are using this as a typeahead, set the triggerCharIndex to -1 since we want to search on the entire input on every keypress */
+                triggerCharIndex = -1;
+            }
+
+            if (settings.asTypeahead || triggerCharIndex > -1) { //If the triggerChar is present in the inputBuffer array
                 currentDataQuery = inputBuffer.slice(triggerCharIndex + 1).join(''); //Gets the currentDataQuery
                 currentDataQuery = utils.rtrim(currentDataQuery); //Deletes the whitespaces
                 _.defer(_.bind(doSearch, this, currentDataQuery)); //Invoking the function doSearch ( Bind the function to this)
@@ -430,7 +451,7 @@
                     'id'      : utils.htmlEncode(item.id),
                     'display' : utils.htmlEncode(item.name),
                     'type'    : utils.htmlEncode(item.type),
-                    'content' : utils.highlightTerm(utils.htmlEncode((item.display ? item.display : item.name)), query)
+                    'content' :  utils.highlightTerm(utils.htmlEncode( item[settings.autocompleteListDisplay] ),query)
                 })).attr('data-uid', itemUid); //Inserts the new item to list
 
                 //If the index is 0
@@ -473,12 +494,20 @@
             }
         }
 
-	    function positionAutocomplete(elmAutocompleteList, elmInputBox) {
+        function positionAutocomplete(elmAutocompleteList, elmInputBox) {
             var elmAutocompleteListPosition = elmAutocompleteList.css('position');
             if (elmAutocompleteListPosition == 'absolute') {
                 var position = textareaSelectionPosition(elmInputBox),
-                    lineHeight = parseInt(elmInputBox.css('line-height'), 10) || 18;
-                elmAutocompleteList.css('width', '15em'); // Sort of a guess
+                lineHeight = parseInt(elmInputBox.css('line-height'), 10) || 18;
+
+                if ( settings.followerListWrap ) {
+                    // if settings.followerListWrap, set list to user-given size
+                    elmAutocompleteList.css('width', settings.followerListSize);
+                } else {
+                    // otherwise, add noListWrap class
+                    elmAutocompleteList.addClass('noListWrap');
+                }
+
                 elmAutocompleteList.css('left', position.left);
                 elmAutocompleteList.css('top', lineHeight + position.top);
 
